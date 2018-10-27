@@ -1,6 +1,7 @@
 This repository contains utilities to exctract
-[GVfs](https://wiki.gnome.org/Projects/gvfs/doc#Metadata) metadata information. GVfs usually
-stores metadata in the user directory `~/.local/share/gvfs-metadata/`. The tree
+[GVfs](https://wiki.gnome.org/Projects/gvfs/doc#Metadata) metadata information.
+
+GVfs usually stores metadata in the user directory `~/.local/share/gvfs-metadata/`. The tree
 structure of any location mounted by the user (e.g. any external peripheral mounted via
 a nautilus-based file manager) is permanently stored into such directory as well as its
 related metadata. This provides usuful information for forensics.
@@ -26,7 +27,7 @@ user home directory structure and metadata. Some example of file metadata are th
 
 # Links
 
-https://wiki.gnome.org/Projects/gvfs/doc#Metadata
-https://en.wikipedia.org/wiki/GVfs
-https://github.com/GNOME/gvfs/blob/master/metadata/metatree.c
-http://cyberforensicator.com/wp-content/uploads/2018/04/GVFS-metadata-Shellbags-for-Linux.pdf
+- https://wiki.gnome.org/Projects/gvfs/doc#Metadata
+- https://en.wikipedia.org/wiki/GVfs
+- https://github.com/GNOME/gvfs/blob/master/metadata/metatree.c
+- http://cyberforensicator.com/wp-content/uploads/2018/04/GVFS-metadata-Shellbags-for-Linux.pdf
