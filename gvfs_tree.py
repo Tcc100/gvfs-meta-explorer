@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 #
 # gvfs-meta-explorer
 # (C) 2018 Emanuele Faranda
@@ -30,7 +30,7 @@ guint32 = c_uint32
 guint64 = c_uint64
 
 # some data
-META_MAGIC = bytearray("\xda\x1ameta")
+META_MAGIC = bytearray(b"\xda\x1ameta")
 MAJOR_VERSION = 1
 MINOR_VERSION = 0
 
@@ -84,7 +84,7 @@ class MetaTree:
 
   def read_string(self, string_pos):
     assert(string_pos < self.size)
-    end_pos = self.data.find('\0', string_pos)
+    end_pos = self.data.find(b'\0', string_pos)
     assert(end_pos != None)
     s = self.data[string_pos:end_pos]
     return s
@@ -112,7 +112,7 @@ class MetaTree:
     if not dir_ent_node:
       dir_ent_node = self.root
 
-    print("%s%s" % ("  " * level, metatree.read_string(dir_ent_node.name)))
+    print("%s%s" % ("  " * level, metatree.read_string(dir_ent_node.name).decode("utf-8")))
     children = self.read_ctype_array(dir_ent_node.children, MetaFileDirEnt)
 
     if children:
