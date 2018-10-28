@@ -32,6 +32,11 @@ guint64 = c_uint64
 META_MAGIC = bytearray(b"\xda\x1ameta")
 MAJOR_VERSION = 1
 MINOR_VERSION = 0
+KEY_IS_LIST_MASK = (1<<31)
+
+META_KEY_TYPE_NONE = 0
+META_KEY_TYPE_STRING = 1
+META_KEY_TYPE_STRINGV = 2
 
 # https://github.com/GNOME/gvfs/blob/master/metadata/metatree.c
 class _MetaFileHeader(BigEndianStructure):
@@ -39,8 +44,8 @@ class _MetaFileHeader(BigEndianStructure):
     ("magic", guchar * 6),        # binary magic
     ("major", guchar),            # binary major version
     ("minor", guchar),            # binary minor version
-    ("rotated", guint32),         # ?
-    ("random_tag", guint32),      # ?
+    ("rotated", guint32),         # flag to avoid a race condition
+    ("random_tag", guint32),      # tag used for the journal
     ("root", guint32),            # root directory information
     ("attributes", guint32),      # offset (*attributes is attributes_length, attributes[n] is n-th attribute name (string))
     ("time_t_base", guint64)      # absolute time to use as base. Other times are relative to this.
@@ -67,6 +72,15 @@ class _MetaFileDirEnt(BigEndianStructure):
       self.name, self.children, self.metadata, self.last_changed
     )
 
+class _MetaFileDataEnt(BigEndianStructure):
+  _fields_ = [
+    ("key", guint32),
+    ("value", guint32),
+  ]
+
+  def __str__(self):
+    return("MetaFileDataEnt[key=%u][value=%u]" % (self.key, self.value))
+
 class MetaFileDirEnt:
   def __init__(self, metatree, node, parent_node):
     self.metatree = metatree
@@ -77,22 +91,58 @@ class MetaFileDirEnt:
     return self.metatree.read_string(self.node.name).decode("utf-8")
 
   def get_children(self):
-    return map(lambda node: MetaFileDirEnt(self.metatree, node, self),
-      self.metatree.read_ctype_array(self.node.children, _MetaFileDirEnt))
+    return [MetaFileDirEnt(self.metatree, node, self) for node in self.metatree.read_ctype_array(self.node.children, _MetaFileDirEnt)]
+
+  def get_metadata(self):
+    if self.node.metadata == 0:
+      return {}
+
+    metadatas = self.metatree.read_ctype_array(self.node.metadata, _MetaFileDataEnt)
+    kv = {}
+
+    for meta in metadatas:
+      key_id = (meta.key & ~KEY_IS_LIST_MASK) & 0xFFFFFFFF
+      if meta.key & KEY_IS_LIST_MASK:
+        val_type = META_KEY_TYPE_STRINGV;
+      else:
+        val_type = META_KEY_TYPE_STRING;
+
+      if key_id >= len(self.metatree.attributes):
+        continue
+
+      key_name = self.metatree.attributes[key_id]
+      if not key_name:
+        continue
+
+      value = None
+      if val_type == META_KEY_TYPE_STRING:
+        value = self.metatree.read_string(meta.value)
+      else:
+        # TODO implement stringv type read
+        raise NotImplementedError
+
+      if value:
+        kv[key_name.decode("utf-8")] = value.decode("utf-8")
+
+    return kv
+
+  def get_last_changed(self):
+    return self.node.last_changed + self.metatree.header.time_t_base
 
 class MetaTree:
   def __init__(self, f, size):
     self.file = f
     self.size = size
-    self.data = mmap.mmap(f.fileno(), size, mmap.MAP_PRIVATE, mmap.PROT_READ)
-    self.header = _MetaFileHeader.from_buffer_copy(self.data)
+    # it's writable just for convenince (we can use from_buffer instead of from_buffer_copy)
+    self.data = mmap.mmap(f.fileno(), size, mmap.MAP_PRIVATE)
+    self.header = _MetaFileHeader.from_buffer(self.data)
     assert(self.header.valid())
     self.root = MetaFileDirEnt(self, self.read_ctype(self.header.root, _MetaFileDirEnt), None)
     self.attributes = self.read_attributes_array()
 
   def read_ctype(self, pos, ctype_cls):
     assert(pos + sizeof(ctype_cls) < self.size)
-    return ctype_cls.from_buffer_copy(self.data, pos)
+    return ctype_cls.from_buffer(self.data, pos)
 
   def read_string(self, string_pos):
     assert(string_pos < self.size)
@@ -102,6 +152,9 @@ class MetaTree:
     return s
 
   def read_array(self, pos, item_getter, item_size):
+    if pos == 0:
+      return []
+
     num_elems = socket.ntohl(self.read_ctype(pos, guint32).value)
     elems = []
 

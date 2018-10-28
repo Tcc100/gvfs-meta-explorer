@@ -25,6 +25,18 @@ currently not connected:
 Some special locations are the `root` and `home` locations, which contain the root file system and
 user home directory structure and metadata. Some example of file metadata are the icons locations.
 
+# Fuse
+
+Dependecies:
+
+- fusepy (install with `pip install fusepy`)
+
+Run:
+
+```
+  python gvfs_meta_mount.py ~/mnt
+```
+
 # Links
 
 - https://wiki.gnome.org/Projects/gvfs/doc#Metadata
