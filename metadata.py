@@ -63,7 +63,7 @@ class _MetaFileDirEnt(BigEndianStructure):
   _fields_ = [
     ("name", guint32),            # *name is node name
     ("children", guint32),        # offset (*children is children length, children[n] is n-th MetaFileDirEnt child)
-    ("metadata", guint32),        # TODO, key->value metadata
+    ("metadata", guint32),        # key->value metadata
     ("last_changed", guint32)     # last_change relative time
   ]
 
