@@ -171,7 +171,10 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('mountpoint', help='the FUSE mountpoint')
   parser.add_argument('--root', help='the GVfs metadata root', default="~/.local/share/gvfs-metadata")
+  parser.add_argument('--verbose', '-v', help='enable debug output', action='count')
   args = parser.parse_args()
 
-  logging.basicConfig(level=logging.DEBUG)
+  if args.verbose:
+    logging.basicConfig(level=logging.DEBUG)
+
   fuse = FUSE(GvfsMetadataFS(args.root), args.mountpoint, foreground=True, allow_other=True)

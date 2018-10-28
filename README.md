@@ -50,7 +50,7 @@ Run:
   python gvfs_meta_mount.py ~/mnt --root ~/.local/share/gvfs-metadata
 ```
 
-The directory `~/mnt` can now be explored via command line or a file manager. The script stays in foreground and prints debugging and exceptions information.
+The directory `~/mnt` can now be explored via command line or a file manager. The script stays in foreground. Use `-v` to print debugging information.
 
 # Links
 
