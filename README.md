@@ -1,5 +1,4 @@
-This repository contains utilities to exctract
-[GVfs](https://wiki.gnome.org/Projects/gvfs/doc#Metadata) metadata information.
+This repository contains utilities to exctract [GVfs](https://wiki.gnome.org/Projects/gvfs/doc#Metadata) metadata information.
 
 The GVfs framework is used by nautilus based file managers (e.g. caja) to handle virtual and phisical devices. Metadata include, for example, attributes like icon position for desktop icons, emblem icon, download uri for pdf file. When a user selects a drive and mounts it from the file manager gui, the device metadata is saved into a GVfs metadata folder. This folder is located at `~/.local/share/gvfs-metadata` and every device has a subdirectory under this folder. Any subsequent interaction with the device via the file manager adds more metadata to the device folder.
 
@@ -42,15 +41,15 @@ The module is not optimized and is in early development.
 
 Dependecies:
 
-- fusepy (install with `pip install fusepy`)
+- fuse-python (install with `pip install fuse-python`)
 
 Run:
 
 ```
-  python gvfs_meta_mount.py ~/mnt --root ~/.local/share/gvfs-metadata
+  python gvfs_meta_mount.py ~/.local/share/gvfs-metadata ~/mnt
 ```
 
-The directory `~/mnt` can now be explored via command line or a file manager. The script stays in foreground. Use `-v` to print debugging information.
+The directory `~/mnt` can now be explored via command line or a file manager. Use `-d` to print debugging information and the script stays in foreground.
 
 # Links
 

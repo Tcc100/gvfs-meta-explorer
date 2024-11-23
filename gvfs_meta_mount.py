@@ -17,164 +17,179 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import os
-import sys
-import fuse
-import logging
 import errno
-from stat import S_IFDIR, S_IFLNK, S_IFREG
-from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
+import math
+import os
+import stat
+
+import fuse
+
 from metadata import MetaTree
 
-class GvfsMetadataFS(LoggingMixIn, Operations):
-  def __init__(self, root):
-    self.root_path = os.path.expanduser(root)
-    self.metatrees = {}
-    self.uid = os.getuid()
-    self.gid = os.getgid()
+if not hasattr(fuse, '__version__'):
+    raise RuntimeError("your fuse-py doesn't know of fuse.__version__, probably it's too old.")
 
-  def metatree_open(self, path):
-    size = os.stat(path).st_size
-    f = open(path, "rb")
-    return MetaTree(f, size)
+fuse.fuse_python_api = (0, 2)
 
-  def list_available_files(self):
-    if not self.metatrees:
-      for f in os.listdir(self.root_path):
-        try:
-          metatree = self.metatree_open(os.path.join(self.root_path, f))
-          metatree.file.close()
-          self.metatrees[f] = None
-        except (AssertionError, ValueError):
-          pass
-    return list(self.metatrees.keys())
 
-  def stat(self, path):
-    st = os.stat(self.root_path)
-    return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid', 'st_blocks'))
+class GvfsMetadataFS(fuse.Fuse):
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.root_path = None
+        self.metatrees = {}
+        self.uid = os.getuid()
+        self.gid = os.getgid()
 
-  def list_meta_files(self, path_parts, parent_tree=None):
-    metafile = path_parts[0]
-    metatree = None
+    def fsinit(self, root):
+        self.root_path = os.path.expanduser(root)
 
-    if not parent_tree:
-      if not metafile in self.metatrees:
-        return []
+    @staticmethod
+    def metatree_open(path):
+        size = os.stat(path).st_size
+        f = open(path, "rb")
+        return MetaTree(f, size)
 
-      if not self.metatrees[metafile]:
-        # first level
-        self.metatrees[metafile] = self.metatree_open(os.path.join(self.root_path, metafile))
+    def list_available_files(self):
+        if not self.metatrees:
+            for f in os.listdir(self.root_path):
+                try:
+                    metatree = self.metatree_open(os.path.join(self.root_path, f))
+                    metatree.file.close()
+                    self.metatrees[f] = None
+                except (AssertionError, ValueError):
+                    pass
+        return list(self.metatrees.keys())
 
-      metatree = self.metatrees[metafile].root
-    elif not metafile in parent_tree:
-      return []
-    else:
-      metatree = parent_tree[metafile]
+    @staticmethod
+    def stat(path):
+        st = os.stat(path)
+        return fuse.Stat(**{key: getattr(st, key) for key in ('st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid', 'st_blocks')})
 
-    children = metatree.get_children()
+    def list_meta_files(self, path_parts, parent_tree=None):
+        metafile = path_parts[0]
 
-    if len(path_parts) == 1:
-      return [meta.get_name() for meta in children]
-    else:
-      key_based = {}
-      for child in children:
-        key_based[child.get_name()] = child
-      return self.list_meta_files(path_parts[1:], key_based)
+        if not parent_tree:
+            if not metafile in self.metatrees:
+                return []
 
-  def find_node_recursive(self, path_parts, parent_tree=None):
-    metafile = path_parts[0]
-    node = None
+            if not self.metatrees[metafile]:
+                # first level
+                self.metatrees[metafile] = self.metatree_open(os.path.join(self.root_path, metafile))
 
-    if not parent_tree:
-      # first level
-      if not metafile in self.metatrees:
-        return
+            metatree = self.metatrees[metafile].root
+        elif not metafile in parent_tree:
+            return []
+        else:
+            metatree = parent_tree[metafile]
 
-      tree = self.metatrees[metafile]
+        children = metatree.get_children()
 
-      if not tree:
-        return
+        if len(path_parts) == 1:
+            return [meta.get_name() for meta in children]
+        else:
+            key_based = {child.get_name(): child for child in children}
+            return self.list_meta_files(path_parts[1:], key_based)
 
-      node = tree.root
-    else:
-      # Inner level
-      for child in parent_tree.get_children():
-        if child.get_name() == metafile:
-          node = child
-          break
+    def find_node_recursive(self, path_parts, parent_tree=None):
+        metafile = path_parts[0]
+        node = None
 
-    if not node:
-      return
+        if not parent_tree:
+            # first level
+            if not metafile in self.metatrees:
+                return
 
-    if len(path_parts) == 1:
-      return node
-    else:
-      return self.find_node_recursive(path_parts[1:], parent_tree=node)
+            tree = self.metatrees[metafile]
+            if not tree:
+                return
 
-  def metadata_as_contents(self, metadata):
-    return "\n".join(["%s=%s" % (key, value) for key, value in sorted(metadata.items())] + ["",])
+            node = tree.root
+        else:
+            # Inner level
+            for child in parent_tree.get_children():
+                if child.get_name() == metafile:
+                    node = child
+                    break
 
-  # -------------------------------------------------------
+        if not node:
+            return
 
-  def getattr(self, path, fh=None):
-    if path == "/":
-      return self.stat(self.root_path)
+        if len(path_parts) == 1:
+            return node
+        else:
+            return self.find_node_recursive(path_parts[1:], parent_tree=node)
 
-    parts = path[1:].split("/")
-    if len(parts) > 0:
-      if len(parts) == 1:
-        # First level
-        files = self.list_available_files()
-        if parts[0] in files:
-          return self.stat(os.path.join(self.root_path, parts[0]))
-      elif parts[0] in self.metatrees and len(parts) > 0:
-        # Inner level
+    @staticmethod
+    def metadata_as_contents(metadata):
+        return "\n".join(f"{key}={value}" for key, value in sorted(metadata.items()))
+
+    def getattr(self, path: str):
+        if path == "/":
+            return self.stat(self.root_path)
+
+        parts = path.lstrip("/").split("/")
+        if len(parts) == 1:
+            # First level
+            files = self.list_available_files()
+            if parts[0] in files:
+                st = self.stat(os.path.join(self.root_path, parts[0]))
+                st.st_mode = stat.S_IFDIR | 0o555 | (st.st_mode & 0o777)
+                return st
+        elif len(parts) > 0 and parts[0] in self.metatrees:
+            # Inner level
+            node = self.find_node_recursive(parts)
+
+            if node:
+                last_changed = node.get_last_changed()
+                file_content = self.metadata_as_contents(node.get_metadata())
+
+                s = fuse.Stat(**{
+                    "st_atime": last_changed, "st_ctime": last_changed, "st_mtime": last_changed,
+                    "st_uid": self.uid, "st_gid": self.gid, "st_nlink": 1,
+                    "st_size": len(file_content), "st_blocks": math.ceil(len(file_content) / 512),
+                })
+
+                is_dir = len(node.get_children()) > 0
+                if is_dir:
+                    s.st_mode = stat.S_IFDIR | 0o755
+                else:
+                    s.st_mode = stat.S_IFREG | 0o644
+                return s
+
+        return -errno.ENOENT
+
+    def readdir(self, path, *_):
+        parts = path.lstrip("/").split("/")
+        paths = []
+
+        if len(parts) > 0:
+            if parts[0] == "":
+                # First level: just list dirs
+                paths = self.list_available_files()
+            else:
+                # Inner level
+                paths = self.list_meta_files(parts)
+
+        yield fuse.Direntry(".")
+        yield fuse.Direntry("..")
+        yield from map(fuse.Direntry, paths)
+
+    def read(self, path, length, offset):
+        parts = path.lstrip("/").split("/")
         node = self.find_node_recursive(parts)
 
         if node:
-          last_changed = node.get_last_changed()
-          is_dir = (len(node.get_children()) > 0)
-          file_content = self.metadata_as_contents(node.get_metadata())
+            file_contents = self.metadata_as_contents(node.get_metadata())
+            return file_contents[offset:offset + length].encode("utf-8")
 
-          return {
-            "st_atime": last_changed, "st_ctime": last_changed, "st_mtime": last_changed,
-            "st_uid": self.uid, "st_gid": self.gid, 'st_mode': ((S_IFDIR if is_dir else S_IFREG) | (0o755 if is_dir else 0o644)),
-            "st_nlink": 1, "st_size": len(file_content), "st_blocks": 0,
-          }
-
-    raise FuseOSError(errno.ENOENT)
-
-  def readdir(self, path, fh):
-    parts = path[1:].split("/")
-    paths = []
-
-    if len(parts) > 0:
-      if parts[0] == "":
-        # First level: just list dirs
-        paths = self.list_available_files()
-      else:
-        # Inner level
-        paths = self.list_meta_files(parts)
-
-    return ['.', '..'] + paths
-
-  def read(self, path, length, offset, fh):
-    parts = path[1:].split("/")
-    node = self.find_node_recursive(parts)
-
-    if node:
-      file_contents = self.metadata_as_contents(node.get_metadata())
-      return file_contents[offset:offset+length].encode("utf-8")
 
 if __name__ == '__main__':
-  import argparse
-  parser = argparse.ArgumentParser()
-  parser.add_argument('mountpoint', help='the FUSE mountpoint')
-  parser.add_argument('--root', help='the GVfs metadata root', default="~/.local/share/gvfs-metadata")
-  parser.add_argument('--verbose', '-v', help='enable debug output', action='count')
-  args = parser.parse_args()
+    fs = GvfsMetadataFS()
+    fs.parse(errex=1)
+    if fs.fuse_args.mountpoint is None:
+        fs.fuse_args.modifiers["showhelp"] = True
+    if fs.fuse_args.mount_expected():
+        src, = fs.cmdline[1]
+        fs.fsinit(src)
 
-  if args.verbose:
-    logging.basicConfig(level=logging.DEBUG)
-
-  fuse = FUSE(GvfsMetadataFS(args.root), args.mountpoint, foreground=True, allow_other=True)
+    fs.main()

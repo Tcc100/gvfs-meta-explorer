@@ -17,17 +17,20 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import os
-from metadata import MetaTree
 import argparse
+import os
+
+from metadata import MetaTree
+
 
 def recursive_print(dir_ent_node, level=0):
-  print("%s%s" % ("  " * level, dir_ent_node.get_name()))
-  children = dir_ent_node.get_children()
+    print("  " * level + dir_ent_node.get_name())
+    children = dir_ent_node.get_children()
 
-  if children:
-    for child in children:
-      recursive_print(child, level+1)
+    if children:
+        for child in children:
+            recursive_print(child, level + 1)
+
 
 parser = argparse.ArgumentParser(description='Print GVfs metadata directory tree.')
 parser.add_argument('fpath', type=argparse.FileType('r'), help='the input GVfs metadata file')
@@ -37,5 +40,5 @@ fpath = args.fpath.name
 size = os.stat(fpath).st_size
 
 with open(fpath, "rb") as f:
-  metatree = MetaTree(f, size)
-  recursive_print(metatree.root)
+    metatree = MetaTree(f, size)
+    recursive_print(metatree.root)
